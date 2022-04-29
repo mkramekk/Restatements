@@ -1,0 +1,240 @@
+
+#second initial analysis after holidays
+```{r}
+library(tidyverse)
+```
+
+```{r}
+audit_fees <- read_csv("./data/audit fees.csv")
+```
+#removing the redundant variables
+```{r}
+fees_reduntant <- c("Stock Price ($)","S&P Index","Russell Index","Stock Price Date","Market Cap ($)","Financials Date","Revenue ($)","Earnings ($)","Book Value ($)","Assets ($)","Ticker","Auditor Affiliate","Auditor Affiliate Key","Auditor Affiliate Country","Bus Phone","Zip","Market","County","Bus Street 1","Bus Street 2","IRS Number","Fees Include Subsidiaries","Fees Included in Parent Filings","Restated Fees","Parent CIK","Parent Name","Filer Act","Fees Included In Parent Filings")
+
+audit_fees_clean <- audit_fees %>% select(-any_of(fees_reduntant))
+```
+#removing the specific data on NAS
+```{r}
+#Missing total Non audit fees
+audit_fees_clean %>% filter(is.na(`Total Non Audit Fees ($)`))
+audit_fees_clean %>% arrange(!is.na(`Total Non Audit Fees ($)`),`Total Non Audit Fees ($)`)
+#There are no missing Non audit fees
+
+#Missing audit fees
+audit_fees_clean %>% filter(is.na(`Audit Fees ($)`))
+audit_fees_clean %>% arrange(!is.na(`Audit Fees ($)`),`Audit Fees ($)`)
+
+audit_fees_clean %>% mutate(fees_check = `Total Fees ($)`- `Audit Fees ($)` - `Total Non Audit Fees ($)`) %>% select(`Total Fees ($)`,`Audit Fees ($)`,`Total Non Audit Fees ($)`, fees_check) %>% filter(fees_check>=1000 | -1000>=fees_check)
+#so sum of total non audit fees and  audit fees are roughly equal to Total Fees calculated by data provider. Thus, specific data on NAS components is redundant. Additionaly, i remove observations where audit fees are $0.
+
+audit_fees_clean2 <- audit_fees_clean %>% select(-c("Audit Related Fees ($)","Benefit Plan Related Fees ($)","FISDI Fees ($)","Tax Related Fees ($)","Tax Related Fees - Compliance ($)","Tax Related Fees - Non-Compliance ($)","Other/Misc Fees ($)")) %>% filter(`Audit Fees ($)` >0)
+```
+
+#my concern is the data on audit fees data before 2000
+
+```{r}
+audit_fees_clean2 %>% ggplot(aes(`Year Ended`))+geom_histogram(binwidth = 1)+geom_freqpoly(binwidth=1, color="blue")
+```
+```{r}
+ggsave("fees distribution.pdf",plot = audit_fees %>% ggplot(aes(`Year Ended`))+geom_histogram(binwidth = 1), path = "./graphs")
+```
+
+
+```{r}
+audit_fees_clean2 %>% filter(`Year Ended` %in% 2000:2015) %>% group_by(`Year Ended`) %>% summarise(mean_fees=mean(`Total Fees ($)`),mean_naf=mean(`Total Non Audit Fees ($)`)) %>% ggplot()+geom_col(aes(`Year Ended`,mean_fees))+geom_line(aes(`Year Ended`,mean_naf), color="red")
+```
+
+#Further cleaning of audit fees data set
+```{r}
+audit_fees_clean3 <- audit_fees_clean2 %>% 
+  select(`Auditor Key`,Auditor, `CIK Code`,everything()) %>% 
+  select(-c(`Source Date`, `Fiscal Year Ends (Currently Reported)`, `Year Ended Month (Ideal)`,`Incorporation State Code`)) %>% rename(source_fees = Source) %>% 
+  arrange(`Auditor Key`)
+```
+
+# I need to remove the observations where audit fees are NA 
+#Check for key identifiers in audit fees data set
+```{r}
+audit_fees_clean3 %>% count(`Auditor Key`,Auditor) %>% count(`Auditor Key`) %>% filter(n>1)
+#Auditor keys are unique
+
+audit_fees_clean3 %>% filter(is.na(`CIK Code`))
+audit_fees_clean3 %>% arrange(!is.na(`CIK Code`),`CIK Code`)
+#No NA is CIK code variable
+
+#Is key identifier (auditor key, CIK, Year ended) unique?
+audit_fees_clean3 %>% count(`Auditor Key`,`CIK Code`,`Year Ended`) %>% filter(n>1)
+#Key identifiers is unique
+
+```
+
+#CIK selection from audit fees data set that will be used to extract opinions data from Audit Analytics. I use CIK from audit fees data set because information on audit opinions is immense and it doesn't make sense to download everything from within timespan of interest
+```{r}
+ciks <- unique(audit_fees$`CIK Code`)
+length(ciks)
+ciks <- as.data.frame(ciks)
+write_csv(ciks,file = "./data/CIK Codes for opinons.csv",col_names = FALSE)
+```
+
+#appending three opinions files into 1
+```{r}
+opinions1 <- read_csv("./data/audit opinions/audit opinions 1.csv")
+opinions2 <- read_csv("./data/audit opinions/audit opinions 2.csv")
+opinions3 <- read_csv("./data/audit opinions/audit opinions 3.csv")
+
+classes <- data.frame(x1=sapply(opinions1,class),
+                      x2=sapply(opinions2,class),
+                      x3=sapply(opinions3,class))
+opinions2$`SIC Code` <- as.numeric(opinions2$`SIC Code`)
+opinions3$`SIC Code` <- as.numeric(opinions3$`SIC Code`)
+#removing the redundant variables from opinions data frame
+removable <- c("S&P Index","Russell Index","Going Concern Issue Key List","Going Concern Issue Phrase List")
+opinions1 <- opinions1 %>% select(-removable)
+opinions2 <- opinions2 %>% select(-removable)
+opinions3 <- opinions3 %>% select(-removable)
+opinions <- bind_rows(opinions1,opinions2,opinions3)
+rm(opinions1,opinions2,opinions3)
+```
+#removing the redundant variables from restatements file
+```{r}
+opinions_redundant <- c("Stock Price ($)","Stock Price Date","Market Cap ($)","Financials Date","Revenue ($)","Earnings ($)","Book Value ($)","Assets ($)","X68","X69","X70","X71","X72","Ticker","Going Concern Issue Key List","Going Concern Issue Phrase List","Total CAMS in Opinion","Accounting Basis","Is Integrated Audit","Is Additional Opinion","Additional Signature Date 1","Additional Signature Date 2", "Additional Signature Date 3","Additional Signature Date 4","Additional Signature Date 5","Auditor Since Year","Auditor Since Code","Predecessor Auditor Since Year","Predecessor Auditor Since Code","Filer Status","Fees Fiscal Year Ended","Audit Fees ($)","Non-Audit Fees ($)","Total Fees ($)","Going Concern","Bus Phone","Zip","Market","Auditor Affiliate","Auditor Affiliate Key","Auditor Affiliate PCAOB Registration Number","Bus Street 1","Bus Street 2","Audit Opinion Key","Parent CIK","Parent Name","Filer Act","Signature Date","Source","Source Date","Month Ended (Ideal)","County")
+
+opinions_clean <- opinions %>% select(-any_of(opinions_redundant))
+```
+
+#changing the order of columns in opinions data set
+```{r}
+opinions_clean2 <- opinions_clean %>% select(`Auditor Key`, Auditor,`Auditor City`,`Auditor State Name`,`Auditor State Code`, `Auditor State Region`,  everything()) %>% arrange(`Auditor Key`)
+```
+
+#Opinions check
+```{r}
+#What are the key identifiers between opinions and audit fees data sets? Auditor key, cik, year ended, month ended (ideal)
+
+#Removing NAs
+opinions_clean2 %>% filter(is.na(`Auditor Key`)& is.na(Auditor)| is.na(`CIK Code`))
+
+opinions_clean3 <- opinions_clean2 %>% filter(!is.na(`Auditor Key`) & !is.na(Auditor)) %>% filter(!is.na(`CIK Code`))
+opinions_clean3 %>% filter(is.na(`CIK Code`))
+```
+
+
+```{r}
+# Is auditor key unique?
+opinions_clean3 %>% arrange(!is.na(`Auditor Key`),`Auditor Key`)
+opinions_clean3 %>% group_by(`Auditor Key`,Auditor) %>% summarise(n()) %>% count(`Auditor Key`) %>% filter(n>1)
+#auditors key are unique
+#Is cik unique?
+opinions_clean3 %>% arrange(!is.na(`CIK Code`),`CIK Code`)
+opinions_clean3 %>% filter(is.na(`CIK Code`))
+opinions_clean3 %>% group_by(`CIK Code`,Company) %>% summarise(n()) %>% count(`CIK Code`) %>% filter(n>1)
+#cik is unique
+
+#changing the name of year key identfier
+opinions_clean4 <-  opinions_clean3 %>% rename(`Year Ended` = `Year Ended (Ideal)`) %>% distinct()
+
+```
+
+#Check the uniqueness of keys
+```{r}
+opinions_clean4 %>% count(`Auditor Key`,`CIK Code`,`Year Ended`) %>% filter(n>1) %>% 
+  arrange(desc(n))
+#lots of duplicates etc
+#there are 3083 observations which are not unique based on specified keys(Auditor key, cik code and year ended). Because opinions_clean4 has 215873 observations I remove 3083 indistinct observations as it is ca. 1,5% of the sample and shouldn't impact the statistical inference
+indistinct <- opinions_clean4 %>% count(`Auditor Key`,`CIK Code`,`Year Ended`) %>% filter(n>1) 
+opinions_clean5 <- left_join(opinions_clean4, indistinct, by=c("Auditor Key","CIK Code","Year Ended")) %>% filter(is.na(n))
+rm(indistinct)
+opinions_clean5 <- opinions_clean5 %>% select(-n)
+opinions_clean5 %>% count(`Auditor Key`,`CIK Code`,`Year Ended`) %>% filter(n>1)
+```
+
+#Cleaning the opinions data considering the geography. 
+```{r}
+unique(opinions_clean5$`Auditor State Region`) 
+```
+#I remove Canada and Foreign values to obtain American sample. Further, I remove NA values from Auditor City variable because I need auditor's city for audit office-level.
+```{r}
+opinions_clean6 <- opinions_clean5 %>% filter(!grepl('Foreign|Canada',`Auditor State Region`)) %>%
+  filter(!is.na(`Auditor City`)) %>% 
+  select(`Auditor Key`,Auditor,`Auditor City`,`Auditor State Name`,`Auditor State Code`,`Auditor State Region`,`CIK Code`,Company,everything())
+unique(opinions_clean6$`Auditor State Region`) 
+opinions_clean6 %>% 
+  filter(is.na(`Auditor City`))
+opinions_clean6 %>% 
+  filter(is.na(`Auditor State Region`))
+```
+
+
+#Combining data sets of opinions and fees
+
+```{r}
+opinions_and_fees <- left_join(opinions_clean6,audit_fees_clean3, by = c("Auditor Key","CIK Code","Year Ended"))
+```
+
+#Opinions_and_fees further cleaning
+
+```{r}
+opinions_and_fees %>% filter(is.na(`Audit Fees ($)`))
+```
+#Removing observations without fees
+```{r}
+opinions_and_fees2 <- opinions_and_fees %>% filter(!is.na(`Audit Fees ($)`| `Total Non Audit Fees ($)`))
+opinions_and_fees2 %>% 
+  filter(is.na(`Audit Fees ($)`| `Total Non Audit Fees ($)`))
+
+opinions_and_fees2 %>% filter(Auditor.x == Auditor.y)
+opinions_and_fees2 %>% filter(Company.x == "NA")
+
+opinions_and_fees2 %>% filter(is.na(`SIC Code.x` & `SIC Code.y`))
+```
+
+#Further cleaning and removing observations from before 2000
+```{r}
+opinions_and_fees3  <- opinions_and_fees2 %>% 
+  rename(Auditor = Auditor.x, Company = Company.x) %>% mutate(Auditor = ifelse(is.na(Auditor), Auditor.y, Auditor)) %>% 
+  mutate(Company = ifelse(is.na(Company), Company.y, Company)) %>% 
+  rename(City=City.x, `State Name`= `State Name.x`, `State Code` = `State Code.x`, `Year Ended Date`= `Year Ended Date.x`) %>% 
+  select(-c(City.y, `State Code.y`, `State Name.y`,`Year Ended Date.y`)) %>% filter(`Year Ended`>=2000)
+
+opinions_and_fees3 %>% ggplot(aes(`Year Ended`))+geom_histogram(binwidth = 0.5)
+
+```
+
+
+#restatements
+#what should be the range for file date??
+#how to treat the restatements for multiple periods (years)
+```{r}
+restatements <- read_csv("./data/restatements.csv")
+```
+
+#removing the redundant variables from restatements file
+```{r}
+restat_redundant <- c("MR - Stock Price ($)","MR - Stock Price Date","MR - Market Cap ($)","MR - Financials Date","MR - Revenue ($)","MR - Earnings ($)","MR - Book Value ($)","MR - Assets ($)","H - Stock Price ($)","H - Stock Price Date","H - Market Cap ($)","H - Financials Date","H - Revenue ($)","H - Earnings ($)","H - Book Value ($)","H - Assets ($)","Days to Securities Class Action Litigation","Securities Class Action Litigation Legal Case Key","Filer Act","X66","X67","Ticker","Market","IRS Number","Bus Street 1","Bus Street 2","City","County","State Code","State Name","State Region","Zip","Bus Phone","Parent CIK","Parent Name","SIC Code","SIC Description","NAICS Code","NAICS Description","SEC Investigation","Board Involvement","Auditor Letter - Discussion","Cumulative Change in Net Income","Cumulative Change in Stockholder Equity","Accounting Rule (GAAP/FASB) Application Failures","Financial Fraud, Irregularities and Misrepresentations","Errors - Accounting and Clerical Applications","Other Significant Issues","Disclosure Accepted","Restatement Key")
+restatements_clean <- restatements %>% select(-any_of(restat_redundant))                
+```
+
+#restated periods per each year
+
+```{r}
+
+```
+
+```{r}
+restatements_clean2 <- restatements_clean %>% 
+  separate(`Restated Period Begin`,c ("restated_year_begin", "rest1") , sep =4, remove = FALSE, convert = TRUE ) %>% 
+  select(-rest1) %>% 
+  separate(`Restated Period Ended`,c("restated_year_end", "rest2"), sep = 4, remove = FALSE, convert = TRUE) %>% 
+  select(-rest2) %>% 
+  unite("restated_periods",c( seq(restated_year_begin, restated_year_end)), sep = ";", remove=FALSE)
+```
+```{r}
+x1=1:5
+x2=11:15
+df <- data.frame(x1,
+                 x2)
+rm(x1,x2)
+x3 <- 1:20
+df %>% rowwise() %>% mutate(seq= x3 %in% x1,x2)
+```
+

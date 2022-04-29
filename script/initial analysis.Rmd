@@ -1,0 +1,78 @@
+
+
+#Reading the data
+```{r}
+audit_fees <- read_csv("./data/audit fees.csv")
+```
+#What is the file date?
+```{r}
+#case of oracle
+oracle <- filter(audit_fees, Company =="ORACLE CORP")
+#Source (file) date is the date of filing the DEF14A - "definitive proxy statement" Is there any else? Lots of another shit there
+
+audit_fees %>% count(Source, sort = TRUE) %>% ggplot(aes(Source,n))+geom_point()+coord_flip()
+```
+Whats the past range of the sample?
+```{r}
+audit_fees %>% count(`Year Ended`) %>% rename(year=`Year Ended`) %>% ggplot(aes(year,n))+geom_col()
+```
+#It clearly lacks data for 2015 and before 2000 there is none. Ok, i remove this data frame and add a new one with file date 01-01-2017 and with no bottom limitations
+New data
+```{r}
+audit_fees_new <- read_csv("./data/audit fees new.csv")
+```
+```{r}
+audit_fees_new %>% ggplot(aes(`Year Ended`))+geom_bar()
+```
+#Ok, so there is no data before 2000
+```{r}
+#Is CIK unique identification key?
+audit_fees_new  %>%  count(`CIK Code`, Company) %>% count(`CIK Code`) %>% filter(n>1)
+audit_fees_new %>% filter(is.na(`CIK Code`))
+audit_fees_new %>% filter(is.na(Company))
+#CIK is unique
+#How to delete all useless variables?
+fees_reduntant <- c("Stock Price ($)","S&P Index","Russell Index", "Currency","Stock Price Date","Market Cap ($)","Financials Date","Revenue ($)","Earnings ($)","Book Value ($)","Assets ($)")
+audit_fees_new %>% select(fees_reduntant)
+audit_fees_new <- audit_fees_new %>%  select(-fees_reduntant)
+```
+ 
+```{r}
+as.tibble(audit_fees_new)
+audit_fees_new <- audit_fees_new %>% rename(end_year=`Year Ended`)
+audit_fees_new %>% count(end_year)
+```
+#removing years that are unnecessary 
+```{r}
+audit_fees_new2 <- audit_fees_new %>% filter(end_year %in% 2000:2015)
+audit_fees_new2 %>% count(end_year)
+```
+#ok, let's see how restatements look like
+```{r}
+restatements <- read_csv("./data/restatements.csv")
+restat_redundant <- c("MR - Stock Price ($)","MR - Stock Price Date","MR - Market Cap ($)","MR - Financials Date","MR - Revenue ($)","MR - Earnings ($)","MR - Book Value ($)","MR - Assets ($)","H - Stock Price ($)","H - Stock Price Date","H - Market Cap ($)","H - Financials Date","H - Revenue ($)","H - Earnings ($)","H - Book Value ($)","H - Assets ($)","Days to Securities Class Action Litigation","Securities Class Action Litigation Legal Case Key","Filer Act","Currency")
+restatements <- restatements %>% select(-restat_redundant)
+```
+
+#whats the source date - let's choose an example
+```{r}
+fraudster <- restatements %>% count(`CIK Code`, Company) %>% arrange(desc(n)) %>% head (1)
+restatements  
+info_fraud <-   restatements %>% filter(`CIK Code` == fraudster$`CIK Code`)
+rm(fraudster)
+info_fraud
+```
+```{r}
+restatements %>% select(Company,Disclosure,`Disclosure Date`,`Disclosure Accepted`,`Date of 8-K Item 4.02`)
+#file data is the variable Disclosure Date
+
+```
+```{r}
+restatements2 <- restatements %>% mutate(res_year = format(`Disclosure Accepted`,format= "%Y"))
+
+ggplot(restatements2, aes(res_year))+geom_bar()+coord_flip()
+```
+```{r}
+restatements2 %>% separate(`Restated Period Begin`,c("year","month","day"),remove = FALSE) %>%  select(`Restated Period Begin`,  year,month,day)
+```
+

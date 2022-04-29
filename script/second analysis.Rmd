@@ -1,0 +1,10 @@
+
+#second initial analysis after holidays
+```{r}
+library(tidyverse)
+```
+
+```{r}
+read_csv("./data/audit fees.csv")
+```
+
